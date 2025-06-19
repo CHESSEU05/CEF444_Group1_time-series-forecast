@@ -1,0 +1,66 @@
+Below is a structured write-up that documents your univariate findings and interprets what they tell us about each town’s climate profile. I’ve organized it by variable, with key takeaways and comparative observations.
+
+## 1. Variable-by-Variable Interpretation
+
+### 1.1 Temperature
+
+* **Range**: coolest in **Bamenda** (\~18.2 °C median), warmest in **Yaoundé** (\~22.7 °C median).
+* **Spread**: all towns have similar variability (std ≈1.1–1.7 °C), reflecting modest daily/seasonal swings.
+* **Skew**: mean > median by \~0.2 °C in Bafoussam, Bambili, Bamenda suggests slight right-skew (occasional warm spikes). Yaoundé shows near symmetry.
+
+> **Takeaway**: Yaoundé is noticeably warmer year-round; Bamenda and Bambili are coolest. All four exhibit consistent daily cycles without extreme thermal volatility.
+
+---
+
+### 1.2 Humidity
+
+* **High overall**: medians range from \~94.5 % (Bafoussam) up to \~96 % (Yaoundé).
+* **Variability**: Yaoundé is tightest (std ≈2.0 %), others a bit wider (std ≈5–7 %).
+* **Skew**: mean < median in three towns → left-skew, most readings at the high end (frequent saturation).
+
+> **Takeaway**: All sites are very humid. Yaoundé’s humidity is both highest and most stable, possibly due to urban microclimate or localized rainfall patterns.
+
+---
+
+### 1.3 Solar Irradiance
+
+* **Median values**: Bafoussam (658 W/m²) > Bambili (638) > Bamenda (621) > Yaoundé (563).
+* **Variation**: inland sites (Bambili, Bamenda) show higher std (\~160–170 W/m²) vs. Yaoundé (\~114 W/m²), indicating more variability in clear-sky vs. cloudy conditions.
+* **Outliers**: maxima exceed 1000 W/m² in three towns (midday peaks), minima dip below 80 W/m² on overcast or nocturnal readings.
+
+> **Takeaway**: Bafoussam and Bambili offer the strongest median solar resource; Yaoundé is cloudier on average. Higher variability inland suggests more pronounced sunny vs. cloudy days.
+
+---
+
+### 1.4 PV Potential
+
+* **Follows irradiance**: highest in Bafoussam (\~3.37), lowest in Yaoundé (\~2.86).
+* **Low spread**: std ≈0.6–0.9.
+* **Skew**: mean ≈ median in three towns, slight negative in Yaoundé, reflecting consistent moderate yields.
+
+> **Takeaway**: Expected PV yields align with irradiance rankings. Bafoussam and Bambili look most promising for solar installations, Yaoundé the least.
+
+---
+
+### 1.5 Wind Speed
+
+* **Very low average** in most towns (0.5–0.6), except **Yaoundé** (\~1.44).
+* **Skew**: strong right-skew (mean > median), a few gusts push max up to 3.3 m/s in Yaoundé, \~2.5 m/s in Bafoussam.
+* **Implication**: wind energy potential is minimal everywhere, with Yaoundé only marginally windier.
+
+> **Takeaway**: Wind is not a reliable energy source in these locations; solar remains the dominant renewable option.
+
+---
+
+## 2. Overall Insights
+
+* **Solar vs. humidity trade-off**: the sunniest towns (Bafoussam, Bambili) are slightly less humid than Yaoundé, easing PV cooling needs.
+* **Thermal comfort & design**: Yaoundé’s higher base temperature and humidity may influence building cooling loads and system derating.
+* **Resource ranking**:
+
+  1. **Bafoussam** – highest irradiance & PV potential, moderate humidity/temperature
+  2. **Bambili** – close second on solar, slightly cooler
+  3. **Bamenda** – good solar, coolest but a bit more variable
+  4. **Yaoundé** – warmest & most humid, lowest solar, marginally higher wind
+
+---
