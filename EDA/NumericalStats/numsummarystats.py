@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # 1. Directory containing cleaned CSVs
-cleaned_dir = "../CleanedDataset"
+cleaned_dir = "../../CleanedDataset"
 
 # 2. Collect all cleaned files
 file_paths = glob.glob(os.path.join(cleaned_dir, "*.csv"))
