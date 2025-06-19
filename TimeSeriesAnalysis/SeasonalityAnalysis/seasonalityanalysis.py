@@ -44,35 +44,4 @@ for file in files:
         fig.savefig(os.path.join(decompose_dir, f"{town}_{var}_decompose.png"), dpi=300)
         plt.close(fig)
 
-# # 5. Seasonal subseries plots for irradiance
-# subseries_dir = "seasonal_subseries_plots"
-# os.makedirs(subseries_dir, exist_ok=True)
-
-# for file in files:
-#     town = os.path.splitext(os.path.basename(file))[0]
-#     df = pd.read_csv(file, parse_dates=["date"])
-#     df.set_index("date", inplace=True)
-
-#     # Extract hour and month for grouping
-#     df['hour'] = df.index.hour
-#     df['month'] = df.index.month
-
-#     # Pivot table: mean irradiance per hour per month
-#     pivot = df.pivot_table(values='irradiance', index='hour', columns='month', aggfunc='mean')
-
-#     # Plot subseries
-#     plt.figure(figsize=(12, 6))
-#     pivot.plot(ax=plt.gca())
-#     plt.title(f'{town} - Seasonal Subseries of Irradiance (Hourly by Month)', fontsize=16)
-#     plt.xlabel('Hour of the Day')
-#     plt.ylabel('Average Irradiance (W/m²)')
-#     plt.grid(True, alpha=0.5)
-#     plt.legend(title='Month', bbox_to_anchor=(1.05, 1), loc='upper left')
-#     plt.tight_layout()
-
-#     # Save plot
-#     plt.savefig(os.path.join(subseries_dir, f"{town}_irradiance_subseries.png"), dpi=300)
-#     plt.close()
-
 print(f"Seasonal decomposition plots saved in '{decompose_dir}'")
-# print(f"Seasonal subseries plots saved in '{subseries_dir}'")
