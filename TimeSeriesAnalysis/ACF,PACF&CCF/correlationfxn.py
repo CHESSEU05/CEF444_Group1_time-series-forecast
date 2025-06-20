@@ -43,7 +43,7 @@ for file in files:
         ]
         ax.plot(lags, ccf_vals, label=var)
     ax.axvline(0, color="k", linestyle="--")
-    ax.set_xlabel("Lag (hours)")
+    ax.set_xlabel("Lag (days)")
     ax.set_ylabel("Cross-correlation")
     ax.set_title(f"{town} Irradiance vs Predictors CCF")
     ax.legend()
