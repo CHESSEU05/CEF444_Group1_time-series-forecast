@@ -1,0 +1,20 @@
+Significance of Annual Irradiance Cycles in Solar Forecasting:
+
+Detecting annual cycles of solar irradiance is crucial in solar energy forecasting for the following reasons:
+
+1. **Seasonal Forecast Accuracy**:
+   Cameroon experiences distinct dry and wet seasons. Irradiance levels typically peak during dry months (Nov–Feb) and fall during rainy months (May–Sept). Understanding these cycles allows models to capture seasonality, improving prediction accuracy.
+
+2. **Energy Planning**:
+   For solar panel installations and energy resource planning, knowledge of high vs. low irradiance periods is vital to ensure stable power supply throughout the year.
+
+3. **System Sizing and Optimization**:
+   Systems can be sized appropriately based on expected irradiance lows, ensuring efficient energy storage and avoiding power shortages.
+
+4. **Policy and Investment Decisions**:
+   Long-term irradiance trends help determine viable regions for solar energy projects and inform government or investor decisions.
+
+5. **Climate Change Insights**:
+   Comparing cycles over decades (1950–2020) may reveal shifts in seasonal patterns, providing insight into the impact of climate variability on solar resources.
+
+By analyzing monthly and weekly averages, one can clearly visualize these cycles and detect consistent dry-season irradiance peaks and wet-season troughs across all four towns.

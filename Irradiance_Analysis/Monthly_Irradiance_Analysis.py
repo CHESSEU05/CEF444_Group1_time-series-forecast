@@ -1,100 +1,86 @@
 import pandas as pd
+import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 
-# List of datasets
+sns.set(style="whitegrid")
+TARGET_YEAR = 1950
+
+# List of cities and file paths
 files = {
-    'Bafoussam': 'CleanedDataset/Bafoussam_IrrPT.csv',
-    'Bambili': 'CleanedDataset/Bambili_IrrPT.csv',
-    'Bamenda': 'CleanedDataset/Bamenda_IrrPT.csv',
-    'Yaounde': 'CleanedDataset/Yaounde_IrrPT.csv'
+    'Bafoussam': '../CleanedDataset/Bafoussam_IrrPT.csv',
+    'Bambili': '../CleanedDataset/Bambili_IrrPT.csv',
+    'Bamenda': '../CleanedDataset/Bamenda_IrrPT.csv',
+    'Yaounde': '../CleanedDataset/Yaounde_IrrPT.csv'
 }
 
-# Create output directories
-os.makedirs('plots', exist_ok=True)
+# Process each city
+for city, path in files.items():
+    print(f"\n📍 Processing: {city}")
 
-# Process each region
-for city, file in files.items():
-    df = pd.read_csv(file)
+    df = pd.read_csv(path)
+    df.columns = df.columns.str.strip().str.lower()  # Clean column names
 
-    # Parse datetime
-    df['Date'] = pd.to_datetime(df['Date'])  # Adjust if column name is different
-    df.set_index('Date', inplace=True)
-    
-    # Ensure irradiance column is numeric
-    df['Irradiance'] = pd.to_numeric(df['Irradiance'], errors='coerce')
-    df = df.dropna(subset=['Irradiance'])
+    # Detect column names
+    date_col = next((col for col in df.columns if 'date' in col), None)
+    irr_col = next((col for col in df.columns if 'irr' in col), None)
 
-    # Daily average (already daily, so just smooth with rolling if needed)
-    daily = df['Irradiance'].resample('D').mean()
+    if not date_col or not irr_col:
+        print(f"⚠️ Skipping {city} — missing required columns.")
+        continue
 
-    # Weekly average
-    weekly = df['Irradiance'].resample('W').mean()
+    # 🔧 Fix: Convert integer date format YYYYMMDD to datetime
+    df[date_col] = pd.to_datetime(df[date_col].astype(str), format='%Y%m%d', errors='coerce')
+    df[irr_col] = pd.to_numeric(df[irr_col], errors='coerce')
 
-    # Monthly average
-    monthly = df['Irradiance'].resample('M').mean()
+    df = df.dropna(subset=[date_col, irr_col])
+    df = df.set_index(date_col)
+    df = df[df.index.year == TARGET_YEAR]  # Filter year 1950 only
 
-    # Plotting
-    plt.figure(figsize=(12, 6))
-    plt.plot(monthly, label='Monthly Avg Irradiance')
-    plt.title(f'{city} - Monthly Average Irradiance (1950–2020)')
-    plt.xlabel('Year')
-    plt.ylabel('Irradiance')
-    plt.grid(True)
-    plt.legend()
+    if df.empty:
+        print(f"⚠️ No data for year {TARGET_YEAR} in {city}.")
+        continue
+
+    output_dir = f'plots/{city}_{TARGET_YEAR}'
+    os.makedirs(output_dir, exist_ok=True)
+
+    # ✅ 1. Daily Plot (Whole year)
+    plt.figure(figsize=(14, 5))
+    sns.lineplot(data=df, x=df.index, y=irr_col)
+    plt.title(f"{city} - Daily Irradiance ({TARGET_YEAR})")
+    plt.xlabel("Date")
+    plt.ylabel("Irradiance")
     plt.tight_layout()
-    plt.savefig(f'plots/{city}_monthly_irradiance.png')
+    plt.savefig(f'{output_dir}/{city}_daily_{TARGET_YEAR}.png')
     plt.close()
 
-    plt.figure(figsize=(12, 6))
-    plt.plot(weekly, label='Weekly Avg Irradiance', color='orange')
-    plt.title(f'{city} - Weekly Average Irradiance (1950–2020)')
-    plt.xlabel('Year')
-    plt.ylabel('Irradiance')
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f'plots/{city}_weekly_irradiance.png')
-    plt.close()
+    # ✅ 2. Weekly Plots (each 7-day window)
+    weekly = df.resample('W')
+    for i, (week_start, week_df) in enumerate(weekly):
+        if len(week_df) < 2:
+            continue
+        plt.figure(figsize=(10, 3))
+        sns.lineplot(data=week_df, x=week_df.index, y=irr_col, marker='o')
+        plt.title(f"{city} - Week {i+1} ({week_start.date()})")
+        plt.xlabel("Date")
+        plt.ylabel("Irradiance")
+        plt.tight_layout()
+        plt.savefig(f'{output_dir}/{city}_week_{i+1:02d}.png')
+        plt.close()
 
-    plt.figure(figsize=(12, 4))
-    plt.plot(daily.rolling(30).mean(), label='Smoothed Daily Avg (30-day MA)', color='green')
-    plt.title(f'{city} - Daily Average Irradiance (Smoothed)')
-    plt.xlabel('Year')
-    plt.ylabel('Irradiance')
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f'plots/{city}_daily_irradiance.png')
-    plt.close()
+    # ✅ 3. Monthly Plots
+    monthly = df.resample('ME')
+    for i, (month_start, month_df) in enumerate(monthly):
+        if len(month_df) < 2:
+            continue
+        plt.figure(figsize=(12, 4))
+        sns.lineplot(data=month_df, x=month_df.index, y=irr_col, marker='o')
+        month_name = month_start.strftime('%B')
+        plt.title(f"{city} - {month_name} Irradiance ({TARGET_YEAR})")
+        plt.xlabel("Date")
+        plt.ylabel("Irradiance")
+        plt.tight_layout()
+        plt.savefig(f'{output_dir}/{city}_{month_name}_{TARGET_YEAR}.png')
+        plt.close()
 
-print("Plots saved in 'plots/' directory.")
-
-# Save significance explanation
-explanation = """
-Significance of Annual Irradiance Cycles in Solar Forecasting:
-
-Detecting annual cycles of solar irradiance is crucial in solar energy forecasting for the following reasons:
-
-1. **Seasonal Forecast Accuracy**:
-   Cameroon experiences distinct dry and wet seasons. Irradiance levels typically peak during dry months (Nov–Feb) and fall during rainy months (May–Sept). Understanding these cycles allows models to capture seasonality, improving prediction accuracy.
-
-2. **Energy Planning**:
-   For solar panel installations and energy resource planning, knowledge of high vs. low irradiance periods is vital to ensure stable power supply throughout the year.
-
-3. **System Sizing and Optimization**:
-   Systems can be sized appropriately based on expected irradiance lows, ensuring efficient energy storage and avoiding power shortages.
-
-4. **Policy and Investment Decisions**:
-   Long-term irradiance trends help determine viable regions for solar energy projects and inform government or investor decisions.
-
-5. **Climate Change Insights**:
-   Comparing cycles over decades (1950–2020) may reveal shifts in seasonal patterns, providing insight into the impact of climate variability on solar resources.
-
-By analyzing monthly and weekly averages, one can clearly visualize these cycles and detect consistent dry-season irradiance peaks and wet-season troughs across all four towns.
-"""
-
-with open('irradiance_cycle_significance.txt', 'w') as f:
-    f.write(explanation.strip())
-
-print("Significance explanation saved as 'irradiance_cycle_significance.txt'")
+    print(f"✅ Finished all plots for {city} — saved to: {output_dir}")
