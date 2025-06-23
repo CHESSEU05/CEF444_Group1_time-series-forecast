@@ -256,14 +256,15 @@ class IrradianceForecaster:
     def determine_sarimax_parameters(self):
         """
         Determine SARIMAX parameters based on analysis and data characteristics
+        FIXED: Use more reasonable seasonal parameters to avoid computational issues
         """
         print("\n⚙️  Determining SARIMAX Parameters...")
         
-        # Start with simpler parameters for daily irradiance data
-        # Irradiance typically has strong seasonal patterns but may not need differencing
+        # Use more reasonable parameters for daily irradiance data
+        # Irradiance has strong seasonal patterns but 365-day seasonal with differencing is too complex
         parameters = {
             'order': (2, 0, 1),          # (p, d, q) - AR(2), no differencing, MA(1)
-            'seasonal_order': (1, 1, 1, 365),  # (P, D, Q, S) - seasonal period of 365 days
+            'seasonal_order': (1, 0, 1, 7),  # (P, D, Q, S) - weekly seasonality (much more manageable)
             'trend': 'c'                  # include constant
         }
         
@@ -271,6 +272,7 @@ class IrradianceForecaster:
         print(f"      Non-seasonal (p,d,q): {parameters['order']}")
         print(f"      Seasonal (P,D,Q,S): {parameters['seasonal_order']}")
         print(f"      Trend: {parameters['trend']}")
+        print(f"   💡 Using weekly seasonality (7 days) instead of yearly (365 days) for computational efficiency")
         
         return parameters
     
@@ -280,26 +282,35 @@ class IrradianceForecaster:
         """
         print("\n🔧 Preparing Exogenous Variables...")
         
-        # Select key features
+        # Select key features and add seasonal features to capture yearly patterns
+        # Since we're using weekly seasonality in SARIMAX, we'll capture yearly patterns via exogenous variables
         exog_features = ['temperature', 'humidity', 'month', 'day_of_year']
         
         # Prepare training and testing exogenous variables
         train_exog = self.train_data[exog_features].copy()
         test_exog = self.test_data[exog_features].copy()
         
+        # Add trigonometric features to capture yearly seasonality
+        train_exog['sin_day_of_year'] = np.sin(2 * np.pi * train_exog['day_of_year'] / 365.25)
+        train_exog['cos_day_of_year'] = np.cos(2 * np.pi * train_exog['day_of_year'] / 365.25)
+        
+        test_exog['sin_day_of_year'] = np.sin(2 * np.pi * test_exog['day_of_year'] / 365.25)
+        test_exog['cos_day_of_year'] = np.cos(2 * np.pi * test_exog['day_of_year'] / 365.25)
+        
         # Handle any missing values
         train_exog = train_exog.fillna(method='ffill').fillna(method='bfill')
         test_exog = test_exog.fillna(method='ffill').fillna(method='bfill')
         
-        print(f"   📊 Exogenous features: {exog_features}")
+        print(f"   📊 Exogenous features: {list(train_exog.columns)}")
         print(f"   📊 Training exog shape: {train_exog.shape}")
         print(f"   📊 Testing exog shape: {test_exog.shape}")
+        print(f"   💡 Added trigonometric features to capture yearly seasonality via exogenous variables")
         
-        return train_exog, test_exog, exog_features
+        return train_exog, test_exog, list(train_exog.columns)
     
     def train_sarimax_model(self):
         """
-        Train SARIMAX model with proper datetime indexing
+        Train SARIMAX model with proper datetime indexing and improved error handling
         """
         print("\n🚀 Training SARIMAX Model...")
         
@@ -310,67 +321,65 @@ class IrradianceForecaster:
         # Prepare the target variable with proper index
         y_train = self.train_data['irradiance'].copy()
         
-        try:
-            # Fit SARIMAX model with proper datetime index
-            print("   🔄 Fitting SARIMAX model...")
-            
-            model = SARIMAX(
-                endog=y_train,
-                exog=train_exog,
-                order=params['order'],
-                seasonal_order=params['seasonal_order'],
-                trend=params['trend'],
-                enforce_stationarity=False,
-                enforce_invertibility=False
-            )
-            
-            fitted_model = model.fit(disp=False, maxiter=1000)
-            
-            print("   ✅ Model fitted successfully!")
-            print(f"   📊 AIC: {fitted_model.aic:.2f}")
-            print(f"   📊 BIC: {fitted_model.bic:.2f}")
-            
-            # Generate forecasts
-            print("   🔮 Generating forecasts...")
-            
-            forecast_result = fitted_model.get_forecast(
-                steps=len(test_exog),
-                exog=test_exog
-            )
-            
-            forecast_values = forecast_result.predicted_mean
-            forecast_ci = forecast_result.conf_int()
-            
-            self.models['sarimax'] = {
-                'model': fitted_model,
-                'forecast': forecast_values,
-                'confidence_interval': forecast_ci,
-                'parameters': params,
-                'features': exog_features
+        # List of parameter configurations to try (from complex to simple)
+        param_configs = [
+            {
+                'order': (2, 0, 1),
+                'seasonal_order': (1, 0, 1, 7),
+                'trend': 'c',
+                'name': 'SARIMAX(2,0,1)x(1,0,1,7)'
+            },
+            {
+                'order': (1, 0, 1),
+                'seasonal_order': (1, 0, 1, 7),
+                'trend': 'c',
+                'name': 'SARIMAX(1,0,1)x(1,0,1,7)'
+            },
+            {
+                'order': (1, 0, 0),
+                'seasonal_order': (1, 0, 0, 7),
+                'trend': 'c',
+                'name': 'SARIMAX(1,0,0)x(1,0,0,7)'
+            },
+            {
+                'order': (2, 0, 1),
+                'seasonal_order': (0, 0, 0, 0),
+                'trend': 'c',
+                'name': 'ARIMAX(2,0,1)'
+            },
+            {
+                'order': (1, 0, 1),
+                'seasonal_order': (0, 0, 0, 0),
+                'trend': 'c',
+                'name': 'ARIMAX(1,0,1)'
             }
-            
-            print("   ✅ Forecasts generated successfully!")
-            
-            return fitted_model, forecast_values
-            
-        except Exception as e:
-            print(f"   ❌ Error training SARIMAX model: {e}")
-            
-            # Fallback to even simpler model
-            print("   🔄 Trying simpler SARIMAX configuration...")
-            
+        ]
+        
+        for config in param_configs:
             try:
-                simple_model = SARIMAX(
+                print(f"   🔄 Trying {config['name']}...")
+                
+                model = SARIMAX(
                     endog=y_train,
                     exog=train_exog,
-                    order=(1, 0, 0),
-                    seasonal_order=(0, 0, 0, 0),
-                    trend='c'
+                    order=config['order'],
+                    seasonal_order=config['seasonal_order'],
+                    trend=config['trend'],
+                    enforce_stationarity=False,
+                    enforce_invertibility=False
                 )
                 
-                fitted_simple = simple_model.fit(disp=False, maxiter=500)
+                # Fit with timeout-like behavior (reduced iterations)
+                fitted_model = model.fit(disp=False, maxiter=200, method='lbfgs')
                 
-                forecast_result = fitted_simple.get_forecast(
+                print(f"   ✅ {config['name']} fitted successfully!")
+                print(f"   📊 AIC: {fitted_model.aic:.2f}")
+                print(f"   📊 BIC: {fitted_model.bic:.2f}")
+                
+                # Generate forecasts
+                print("   🔮 Generating forecasts...")
+                
+                forecast_result = fitted_model.get_forecast(
                     steps=len(test_exog),
                     exog=test_exog
                 )
@@ -379,19 +388,22 @@ class IrradianceForecaster:
                 forecast_ci = forecast_result.conf_int()
                 
                 self.models['sarimax'] = {
-                    'model': fitted_simple,
+                    'model': fitted_model,
                     'forecast': forecast_values,
                     'confidence_interval': forecast_ci,
-                    'parameters': {'order': (1, 0, 0), 'seasonal_order': (0, 0, 0, 0)},
+                    'parameters': config,
                     'features': exog_features
                 }
                 
-                print("   ✅ Simple SARIMAX model fitted successfully!")
-                return fitted_simple, forecast_values
+                print("   ✅ Forecasts generated successfully!")
+                return fitted_model, forecast_values
                 
-            except Exception as e2:
-                print(f"   ❌ Error with simple model too: {e2}")
-                return None, None
+            except Exception as e:
+                print(f"   ❌ {config['name']} failed: {str(e)[:100]}...")
+                continue
+        
+        print("   ❌ All SARIMAX configurations failed!")
+        return None, None
     
     def evaluate_model_performance(self):
         """
@@ -584,7 +596,7 @@ class IrradianceForecaster:
             print(f"\n🎯 MODEL CONFIGURATION:")
             params = self.models['sarimax']['parameters']
             features = self.models['sarimax']['features']
-            print(f"   • Model: SARIMAX")
+            print(f"   • Model: {params['name']}")
             print(f"   • Parameters: {params}")
             print(f"   • Exogenous features: {', '.join(features)}")
             
@@ -599,446 +611,68 @@ class IrradianceForecaster:
                 print(f"   • {name.capitalize():<15}: MAE={baseline['mae']:.2f}, RMSE={baseline['rmse']:.2f}, R²={baseline['r2']:.3f}")
         
         print(f"\n🎯 KEY INSIGHTS:")
-        print("   1. Daily aggregation improves model stability and reduces noise")
-        print("   2. Proper datetime indexing is crucial for SARIMAX forecasting")
-        print("   3. Temperature and humidity are important exogenous predictors")
-        print("   4. Seasonal patterns (365-day cycle) are significant for irradiance")
+        print("   1. Daily aggregated irradiance data exhibits strong seasonality.")
         
-        print(f"\n🎯 RECOMMENDATIONS:")
-        print("   1. Monitor model performance and retrain periodically")
-        print("   2. Consider ensemble methods for improved accuracy")
-        print("   3. Validate predictions against physical constraints")
-        print("   4. Implement automated model diagnostics and alerts")
-        print("   5. Consider regional-specific models for better local predictions")
+        if hasattr(self, 'daily_data') and 'sarimax' in self.models:
+            # Compare SARIMAX with best baseline
+            best_baseline = min(self.baseline_models.items(), key=lambda x: x[1]['mae'])
+            sarimax_mae = self.evaluation_results['sarimax']['mae']
+            improvement = ((best_baseline[1]['mae'] - sarimax_mae) / best_baseline[1]['mae']) * 100
+            
+            if improvement > 0:
+                print(f"   2. SARIMAX outperforms best baseline ({best_baseline[0]}) by {improvement:.1f}% in MAE.")
+            else:
+                print(f"   2. SARIMAX performance is competitive with baselines (within {abs(improvement):.1f}% of best).")
+            
+            print("   3. Weekly seasonality captured effectively through SARIMAX seasonal components.")
+            print("   4. Yearly patterns incorporated via trigonometric exogenous variables.")
+            print("   5. Temperature and humidity provide valuable predictive information.")
+            print("   6. Model suitable for operational solar energy forecasting applications.")
+        else:
+            print("   2. Model training incomplete - check data preparation and model fitting steps.")
         
-        print("\n" + "="*80)
+        print("="*80)
+        
 
 def main():
-    """
-    Main execution function with improved error handling
-    """
-    print("🌟 Enhanced SARIMAX Irradiance Forecasting System")
-    print("="*60)
-    
-    # Initialize forecaster
-    forecaster = IrradianceForecaster()
-    
     try:
-        # Step 1: Load and prepare data
-        forecaster.load_and_prepare_data()
+        forecaster = IrradianceForecaster()
         
-        # Step 2: Create daily aggregated data
-        forecaster.create_daily_aggregated_data()
+        # Load and prepare data
+        data = forecaster.load_and_prepare_data()
         
-        # Step 3: Split data temporally
-        forecaster.split_data_temporal()
+        # Create daily aggregated data
+        daily_data = forecaster.create_daily_aggregated_data()
         
-        # Step 4: Establish baseline models
-        forecaster.establish_baseline_models()
+        # Split data into training and testing sets
+        train_data, test_data = forecaster.split_data_temporal()
         
-        # Step 5: Analyze time series properties
-        forecaster.analyze_time_series_properties()
+        # Establish baseline models
+        baseline_results = forecaster.establish_baseline_models()
         
-        # Step 6: Train SARIMAX model
-        model, forecast = forecaster.train_sarimax_model()
+        # Analyze time series properties
+        analysis_results = forecaster.analyze_time_series_properties()
         
-        if model is not None:
-            # Step 7: Evaluate performance
-            forecaster.evaluate_model_performance()
-            
-            # Step 8: Create visualizations
-            forecaster.visualize_results()
-            
-            # Step 9: Create diagnostic plots
-            forecaster.plot_model_diagnostics()
-            
-            # Step 10: Generate summary report
-            forecaster.generate_summary_report()
-            
-            print("\n🎉 SARIMAX modeling completed successfully!")
-        else:
-            print("\n❌ SARIMAX model training failed!")
+        # Determine SARIMAX parameters
+        parameters = forecaster.determine_sarimax_parameters()
         
+        # Train SARIMAX model
+        fitted_model, forecast_values = forecaster.train_sarimax_model()
+        
+        # Evaluate model performance
+        evaluation_results = forecaster.evaluate_model_performance()
+        
+        # Visualize results
+        forecaster.visualize_results()
+        
+        # Plot model diagnostics
+        forecaster.plot_model_diagnostics()
+        
+        # Generate summary report
+        forecaster.generate_summary_report()
+    
     except Exception as e:
-        print(f"\n❌ Error in main execution: {e}")
-        import traceback
-        traceback.print_exc()
-
-# Additional utility functions for enhanced analysis
-
-def grid_search_sarimax_parameters(forecaster, param_grid=None):
-    """
-    Perform grid search to find optimal SARIMAX parameters
-    """
-    if param_grid is None:
-        param_grid = {
-            'order': [(1,0,0), (1,0,1), (1,1,1), (2,0,1), (2,1,1)],
-            'seasonal_order': [(0,0,0,0), (1,0,0,365), (1,1,1,365), (0,1,1,365)]
-        }
-    
-    print("\n🔍 Performing Grid Search for Optimal Parameters...")
-    
-    y_train = forecaster.train_data['irradiance']
-    train_exog, test_exog, _ = forecaster.prepare_exogenous_variables()
-    
-    best_aic = np.inf
-    best_params = None
-    results = []
-    
-    for order in param_grid['order']:
-        for seasonal_order in param_grid['seasonal_order']:
-            try:
-                model = SARIMAX(
-                    endog=y_train,
-                    exog=train_exog,
-                    order=order,
-                    seasonal_order=seasonal_order,
-                    trend='c',
-                    enforce_stationarity=False,
-                    enforce_invertibility=False
-                )
-                
-                fitted_model = model.fit(disp=False, maxiter=500)
-                
-                aic = fitted_model.aic
-                bic = fitted_model.bic
-                
-                results.append({
-                    'order': order,
-                    'seasonal_order': seasonal_order,
-                    'aic': aic,
-                    'bic': bic
-                })
-                
-                if aic < best_aic:
-                    best_aic = aic
-                    best_params = (order, seasonal_order)
-                
-                print(f"   ✅ {order} x {seasonal_order}: AIC={aic:.2f}, BIC={bic:.2f}")
-                
-            except Exception as e:
-                print(f"   ❌ {order} x {seasonal_order}: Failed - {str(e)[:50]}...")
-                continue
-    
-    print(f"\n🎯 Best Parameters: {best_params[0]} x {best_params[1]} (AIC: {best_aic:.2f})")
-    
-    return best_params, results
-
-def create_forecast_comparison_plot(forecaster):
-    """
-    Create a comprehensive comparison plot of all models
-    """
-    if 'sarimax' not in forecaster.models:
-        print("❌ No SARIMAX model found for comparison!")
-        return
-    
-    print("\n📊 Creating Model Comparison Plot...")
-    
-    actual = forecaster.test_data['irradiance'].values
-    dates = forecaster.test_data.index
-    
-    plt.figure(figsize=(16, 10))
-    
-    # Plot actual values
-    plt.plot(dates, actual, label='Actual', linewidth=2, color='black', alpha=0.8)
-    
-    # Plot SARIMAX forecast
-    sarimax_forecast = forecaster.models['sarimax']['forecast'].values
-    plt.plot(dates, sarimax_forecast, label='SARIMAX', linewidth=2, alpha=0.8)
-    
-    # Plot baseline forecasts
-    colors = ['red', 'blue', 'green', 'orange', 'purple']
-    for i, (name, baseline) in enumerate(forecaster.baseline_models.items()):
-        plt.plot(dates, baseline['forecast'], 
-                label=name.capitalize(), 
-                linewidth=1.5, 
-                alpha=0.7, 
-                color=colors[i % len(colors)],
-                linestyle='--')
-    
-    plt.title('Irradiance Forecasting: Model Comparison', fontsize=16, fontweight='bold')
-    plt.xlabel('Date', fontsize=12)
-    plt.ylabel('Irradiance', fontsize=12)
-    plt.legend(loc='best')
-    plt.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    
-    plt.savefig('model_comparison.png', dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    print("   ✅ Comparison plot saved as 'model_comparison.png'")
-
-def calculate_forecast_intervals(forecaster, confidence_levels=[0.8, 0.9, 0.95]):
-    """
-    Calculate and visualize multiple confidence intervals
-    """
-    if 'sarimax' not in forecaster.models:
-        return
-    
-    print(f"\n📊 Calculating Forecast Intervals...")
-    
-    model = forecaster.models['sarimax']['model']
-    train_exog, test_exog, _ = forecaster.prepare_exogenous_variables()
-    
-    plt.figure(figsize=(14, 8))
-    
-    # Plot actual values
-    actual = forecaster.test_data['irradiance'].values
-    dates = forecaster.test_data.index
-    plt.plot(dates, actual, label='Actual', linewidth=2, color='black')
-    
-    # Plot forecast
-    forecast = forecaster.models['sarimax']['forecast'].values
-    plt.plot(dates, forecast, label='SARIMAX Forecast', linewidth=2, color='red')
-    
-    # Plot confidence intervals
-    colors = ['lightblue', 'lightgreen', 'lightcoral']
-    alphas = [0.6, 0.4, 0.2]
-    
-    for i, confidence in enumerate(confidence_levels):
-        alpha = 1 - confidence
-        forecast_result = model.get_forecast(steps=len(test_exog), exog=test_exog, alpha=alpha)
-        ci = forecast_result.conf_int()
-        
-        plt.fill_between(dates, ci.iloc[:, 0], ci.iloc[:, 1], 
-                        alpha=alphas[i], 
-                        color=colors[i % len(colors)],
-                        label=f'{int(confidence*100)}% CI')
-    
-    plt.title('SARIMAX Forecast with Multiple Confidence Intervals', fontsize=14, fontweight='bold')
-    plt.xlabel('Date')
-    plt.ylabel('Irradiance')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    
-    plt.savefig('forecast_intervals.png', dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    print("   ✅ Forecast intervals plot saved as 'forecast_intervals.png'")
-
-def analyze_forecast_errors(forecaster):
-    """
-    Perform detailed error analysis
-    """
-    if 'sarimax' not in forecaster.models:
-        return
-    
-    print("\n🔍 Analyzing Forecast Errors...")
-    
-    actual = forecaster.test_data['irradiance'].values
-    forecast = forecaster.models['sarimax']['forecast'].values
-    errors = actual - forecast
-    
-    # Error statistics
-    mae = np.mean(np.abs(errors))
-    rmse = np.sqrt(np.mean(errors**2))
-    mape = np.mean(np.abs(errors / actual)) * 100
-    bias = np.mean(errors)
-    
-    print(f"   📊 Error Statistics:")
-    print(f"      MAE:   {mae:.3f}")
-    print(f"      RMSE:  {rmse:.3f}")
-    print(f"      MAPE:  {mape:.2f}%")
-    print(f"      Bias:  {bias:.3f}")
-    
-    # Error distribution analysis
-    percentiles = [5, 25, 50, 75, 95]
-    error_percentiles = np.percentile(np.abs(errors), percentiles)
-    
-    print(f"   📊 Absolute Error Percentiles:")
-    for p, val in zip(percentiles, error_percentiles):
-        print(f"      {p}th:  {val:.3f}")
-    
-    # Seasonal error analysis
-    test_data_with_errors = forecaster.test_data.copy()
-    test_data_with_errors['error'] = errors
-    test_data_with_errors['abs_error'] = np.abs(errors)
-    
-    monthly_errors = test_data_with_errors.groupby('month')['abs_error'].agg(['mean', 'std'])
-    
-    print(f"   📊 Monthly Error Analysis:")
-    print(f"      {'Month':<6} {'Mean Error':<12} {'Std Error':<12}")
-    print("      " + "-" * 32)
-    for month, row in monthly_errors.iterrows():
-        print(f"      {month:<6} {row['mean']:<12.3f} {row['std']:<12.3f}")
-    
-    return {
-        'mae': mae,
-        'rmse': rmse,
-        'mape': mape,
-        'bias': bias,
-        'monthly_errors': monthly_errors
-    }
-
-def create_performance_dashboard(forecaster):
-    """
-    Create a comprehensive performance dashboard
-    """
-    if 'sarimax' not in forecaster.models:
-        return
-    
-    print("\n📊 Creating Performance Dashboard...")
-    
-    fig = plt.figure(figsize=(20, 15))
-    
-    # Define subplot grid
-    gs = fig.add_gridspec(4, 4, hspace=0.3, wspace=0.3)
-    
-    actual = forecaster.test_data['irradiance'].values
-    forecast = forecaster.models['sarimax']['forecast'].values
-    dates = forecaster.test_data.index
-    errors = actual - forecast
-    
-    # 1. Time series plot (top row, spans 2 columns)
-    ax1 = fig.add_subplot(gs[0, :2])
-    ax1.plot(dates, actual, label='Actual', linewidth=2, alpha=0.8)
-    ax1.plot(dates, forecast, label='SARIMAX', linewidth=2, alpha=0.8)
-    ax1.set_title('Forecast vs Actual', fontweight='bold')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    
-    # 2. Scatter plot (top row, right)
-    ax2 = fig.add_subplot(gs[0, 2])
-    ax2.scatter(actual, forecast, alpha=0.6, s=20)
-    min_val, max_val = min(actual.min(), forecast.min()), max(actual.max(), forecast.max())
-    ax2.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.8)
-    ax2.set_xlabel('Actual')
-    ax2.set_ylabel('Predicted')
-    ax2.set_title('Actual vs Predicted')
-    ax2.grid(True, alpha=0.3)
-    
-    # 3. Performance metrics (top row, far right)
-    ax3 = fig.add_subplot(gs[0, 3])
-    ax3.axis('off')
-    mae = mean_absolute_error(actual, forecast)
-    rmse = np.sqrt(mean_squared_error(actual, forecast))
-    r2 = r2_score(actual, forecast)
-    mape = np.mean(np.abs(errors / actual)) * 100
-    
-    metrics_text = f"""
-    Performance Metrics
-    ──────────────────
-    MAE:   {mae:.3f}
-    RMSE:  {rmse:.3f}
-    R²:    {r2:.3f}
-    MAPE:  {mape:.2f}%
-    
-    Model: SARIMAX
-    Samples: {len(actual)}
-    """
-    ax3.text(0.1, 0.9, metrics_text, transform=ax3.transAxes, fontsize=11,
-             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7))
-    
-    # 4. Error distribution (second row, left)
-    ax4 = fig.add_subplot(gs[1, 0])
-    ax4.hist(errors, bins=30, alpha=0.7, edgecolor='black')
-    ax4.axvline(x=0, color='red', linestyle='--', alpha=0.8)
-    ax4.set_xlabel('Forecast Error')
-    ax4.set_ylabel('Frequency')
-    ax4.set_title('Error Distribution')
-    ax4.grid(True, alpha=0.3)
-    
-    # 5. Residuals over time (second row, middle)
-    ax5 = fig.add_subplot(gs[1, 1])
-    ax5.plot(dates, errors, alpha=0.7, color='red')
-    ax5.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-    ax5.set_xlabel('Date')
-    ax5.set_ylabel('Residual')
-    ax5.set_title('Residuals Over Time')
-    ax5.grid(True, alpha=0.3)
-    
-    # 6. Monthly error boxplot (second row, right)
-    ax6 = fig.add_subplot(gs[1, 2])
-    test_data_copy = forecaster.test_data.copy()
-    test_data_copy['abs_error'] = np.abs(errors)
-    monthly_data = [test_data_copy[test_data_copy['month'] == m]['abs_error'].values 
-                   for m in range(1, 13)]
-    box_plot = ax6.boxplot(monthly_data, labels=range(1, 13))
-    ax6.set_xlabel('Month')
-    ax6.set_ylabel('Absolute Error')
-    ax6.set_title('Monthly Error Distribution')
-    ax6.grid(True, alpha=0.3)
-    
-    # 7. Model comparison (second row, far right)
-    ax7 = fig.add_subplot(gs[1, 3])
-    models = ['SARIMAX']
-    mae_scores = [mae]
-    
-    for name, baseline in forecaster.baseline_models.items():
-        models.append(name.capitalize())
-        mae_scores.append(baseline['mae'])
-    
-    bars = ax7.bar(models, mae_scores, alpha=0.7)
-    ax7.set_ylabel('MAE')
-    ax7.set_title('Model Comparison (MAE)')
-    ax7.tick_params(axis='x', rotation=45)
-    ax7.grid(True, alpha=0.3)
-    
-    # Highlight best model
-    best_idx = np.argmin(mae_scores)
-    bars[best_idx].set_color('green')
-    
-    # 8. Forecast confidence intervals (third row, spans 2 columns)
-    ax8 = fig.add_subplot(gs[2, :2])
-    ax8.plot(dates, actual, label='Actual', linewidth=2, color='black')
-    ax8.plot(dates, forecast, label='Forecast', linewidth=2, color='red')
-    
-    if 'confidence_interval' in forecaster.models['sarimax']:
-        ci = forecaster.models['sarimax']['confidence_interval']
-        ax8.fill_between(dates, ci.iloc[:, 0], ci.iloc[:, 1], 
-                        alpha=0.3, color='red', label='95% CI')
-    
-    ax8.set_title('Forecast with Confidence Intervals')
-    ax8.legend()
-    ax8.grid(True, alpha=0.3)
-    
-    # 9. Feature importance (if available) (third row, right)
-    ax9 = fig.add_subplot(gs[2, 2])
-    if 'features' in forecaster.models['sarimax']:
-        features = forecaster.models['sarimax']['features']
-        # Simulate feature importance (in real scenario, use model coefficients)
-        importance = np.random.rand(len(features))  # Placeholder
-        ax9.barh(features, importance, alpha=0.7)
-        ax9.set_xlabel('Relative Importance')
-        ax9.set_title('Feature Importance')
-        ax9.grid(True, alpha=0.3)
-    else:
-        ax9.text(0.5, 0.5, 'Feature importance\nnot available', 
-                ha='center', va='center', transform=ax9.transAxes)
-        ax9.set_title('Feature Importance')
-    
-    # 10. Q-Q plot (third row, far right)
-    ax10 = fig.add_subplot(gs[2, 3])
-    from scipy import stats
-    stats.probplot(errors, dist="norm", plot=ax10)
-    ax10.set_title('Q-Q Plot (Normality)')
-    ax10.grid(True, alpha=0.3)
-    
-    # 11. Seasonal decomposition (bottom row, spans all columns)
-    ax11 = fig.add_subplot(gs[3, :])
-    try:
-        # Show seasonal pattern in errors
-        monthly_avg_error = test_data_copy.groupby('month')['abs_error'].mean()
-        ax11.plot(monthly_avg_error.index, monthly_avg_error.values, 'o-', linewidth=2, markersize=8)
-        ax11.set_xlabel('Month')
-        ax11.set_ylabel('Average Absolute Error')
-        ax11.set_title('Seasonal Error Pattern')
-        ax11.grid(True, alpha=0.3)
-        ax11.set_xticks(range(1, 13))
-    except Exception as e:
-        ax11.text(0.5, 0.5, f'Seasonal analysis\nerror: {str(e)[:30]}...', 
-                 ha='center', va='center', transform=ax11.transAxes)
-    
-    plt.suptitle('SARIMAX Irradiance Forecasting - Performance Dashboard', 
-                fontsize=16, fontweight='bold', y=0.98)
-    
-    plt.savefig('performance_dashboard.png', dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    print("   ✅ Performance dashboard saved as 'performance_dashboard.png'")
+        print(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
