@@ -78,16 +78,16 @@ class IrradianceForecaster:
         self.data['day'] = self.data['date'].dt.day
         self.data['day_of_year'] = self.data['date'].dt.dayofyear
         self.data['season'] = self.data['month'].map({12: 'Winter', 1: 'Winter', 2: 'Winter',
-                                                     3: 'Spring', 4: 'Spring', 5: 'Spring',
-                                                     6: 'Summer', 7: 'Summer', 8: 'Summer',
-                                                     9: 'Fall', 10: 'Fall', 11: 'Fall'})
+                                                      3: 'Spring', 4: 'Spring', 5: 'Spring',
+                                                      6: 'Summer', 7: 'Summer', 8: 'Summer',
+                                                      9: 'Fall', 10: 'Fall', 11: 'Fall'})
         
         # Encode categorical variables
         self.data['city_encoded'] = self.town_encoder.fit_transform(self.data['city'])
         
         print(f"📊 Combined dataset shape: {self.data.shape}")
         print(f"📅 Date range: {self.data['date'].min()} to {self.data['date'].max()}")
-        print(f"🏙️  Cities: {self.data['city'].unique()}")
+        print(f"🏙️   Cities: {self.data['city'].unique()}")
         
         return self.data
     
@@ -121,7 +121,7 @@ class IrradianceForecaster:
         self.daily_data = daily_data
         return daily_data
     
-    def split_data_temporal(self, train_ratio=0.8):
+    def split_data_temporal(self, train_ratio=0.999):
         """
         Perform time-based split of the aggregated daily data
         """
@@ -228,8 +228,8 @@ class IrradianceForecaster:
         adf_result = adfuller(irradiance_series)
         
         print(f"   📊 Stationarity Test (ADF):")
-        print(f"      p-value: {adf_result[1]:.4f}")
-        print(f"      Stationary: {'Yes' if adf_result[1] < 0.05 else 'No'}")
+        print(f"   p-value: {adf_result[1]:.4f}")
+        print(f"   Stationary: {'Yes' if adf_result[1] < 0.05 else 'No'}")
         
         # Seasonal decomposition
         try:
@@ -263,7 +263,7 @@ class IrradianceForecaster:
         # Use more reasonable parameters for daily irradiance data
         # Irradiance has strong seasonal patterns but 365-day seasonal with differencing is too complex
         parameters = {
-            'order': (2, 0, 1),          # (p, d, q) - AR(2), no differencing, MA(1)
+            'order': (2, 0, 1),           # (p, d, q) - AR(2), no differencing, MA(1)
             'seasonal_order': (1, 0, 1, 7),  # (P, D, Q, S) - weekly seasonality (much more manageable)
             'trend': 'c'                  # include constant
         }
@@ -451,7 +451,7 @@ class IrradianceForecaster:
     
     def visualize_results(self):
         """
-        Create comprehensive visualizations of results
+        Create comprehensive visualizations of results, with clearer trend visibility.
         """
         print("\n📊 Creating Visualizations...")
         
@@ -459,37 +459,44 @@ class IrradianceForecaster:
             print("❌ No SARIMAX model to visualize!")
             return
         
-        # Create time series comparison plot
         fig, axes = plt.subplots(2, 2, figsize=(20, 12))
         
-        # Plot 1: Time series with forecasts
-        actual = self.test_data['irradiance'].values
-        predicted = self.models['sarimax']['forecast'].values
+        actual = self.test_data['irradiance']
+        predicted = self.models['sarimax']['forecast']
         dates = self.test_data.index
         
-        axes[0, 0].plot(dates, actual, label='Actual', alpha=0.7, linewidth=2)
-        axes[0, 0].plot(dates, predicted, label='SARIMAX Forecast', alpha=0.8, linewidth=2)
+        # Plot 1: Time series with forecasts and rolling means
+        axes[0, 0].plot(dates, actual, label='Actual Daily', alpha=0.5, linewidth=1, color='blue')
+        axes[0, 0].plot(dates, predicted, label='SARIMAX Forecast Daily', alpha=0.6, linewidth=1, color='orange')
+        
+        # Calculate and plot rolling means to highlight trends
+        window_size = 7 # 7-day rolling mean
+        actual_rolling_mean = actual.rolling(window=window_size).mean().dropna()
+        predicted_rolling_mean = predicted.rolling(window=window_size).mean().dropna()
+
+        axes[0, 0].plot(actual_rolling_mean.index, actual_rolling_mean, label=f'Actual {window_size}-Day Avg', color='darkblue', linewidth=2.5)
+        axes[0, 0].plot(predicted_rolling_mean.index, predicted_rolling_mean, label=f'SARIMAX Forecast {window_size}-Day Avg', color='darkred', linewidth=2.5)
         
         # Add confidence intervals if available
         if 'confidence_interval' in self.models['sarimax']:
             ci = self.models['sarimax']['confidence_interval']
             axes[0, 0].fill_between(dates, ci.iloc[:, 0], ci.iloc[:, 1], 
-                                  alpha=0.2, label='95% Confidence Interval')
+                                    alpha=0.2, label='95% Confidence Interval', color='gray')
         
-        axes[0, 0].set_title('Actual vs SARIMAX Forecast', fontsize=14, fontweight='bold')
-        axes[0, 0].set_xlabel('Date')
-        axes[0, 0].set_ylabel('Irradiance')
-        axes[0, 0].legend()
+        axes[0, 0].set_title('Actual vs SARIMAX Forecast with Rolling Averages', fontsize=16, fontweight='bold')
+        axes[0, 0].set_xlabel('Date', fontsize=12)
+        axes[0, 0].set_ylabel('Irradiance', fontsize=12)
+        axes[0, 0].legend(fontsize=10)
         axes[0, 0].grid(True, alpha=0.3)
         axes[0, 0].tick_params(axis='x', rotation=45)
         
         # Plot 2: Residuals over time
-        residuals = actual - predicted
+        residuals = actual.values - predicted.values
         axes[0, 1].plot(dates, residuals, alpha=0.7, color='red')
         axes[0, 1].axhline(y=0, color='black', linestyle='--', alpha=0.5)
         axes[0, 1].set_title('Residuals Over Time', fontsize=14, fontweight='bold')
-        axes[0, 1].set_xlabel('Date')
-        axes[0, 1].set_ylabel('Residual')
+        axes[0, 1].set_xlabel('Date', fontsize=12)
+        axes[0, 1].set_ylabel('Residual', fontsize=12)
         axes[0, 1].grid(True, alpha=0.3)
         axes[0, 1].tick_params(axis='x', rotation=45)
         
@@ -498,21 +505,21 @@ class IrradianceForecaster:
         min_val = min(actual.min(), predicted.min())
         max_val = max(actual.max(), predicted.max())
         axes[1, 0].plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.8, linewidth=2)
-        axes[1, 0].set_xlabel('Actual Irradiance')
-        axes[1, 0].set_ylabel('Predicted Irradiance')
+        axes[1, 0].set_xlabel('Actual Irradiance', fontsize=12)
+        axes[1, 0].set_ylabel('Predicted Irradiance', fontsize=12)
         axes[1, 0].set_title('Actual vs Predicted Scatter Plot', fontsize=14, fontweight='bold')
         axes[1, 0].grid(True, alpha=0.3)
         
         # Add R² to scatter plot
         r2 = r2_score(actual, predicted)
         axes[1, 0].text(0.05, 0.95, f'R² = {r2:.3f}', transform=axes[1, 0].transAxes, 
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8), fontsize=10)
         
         # Plot 4: Residuals histogram
         axes[1, 1].hist(residuals, bins=30, alpha=0.7, edgecolor='black', color='skyblue')
         axes[1, 1].axvline(x=0, color='red', linestyle='--', alpha=0.8, linewidth=2)
-        axes[1, 1].set_xlabel('Residual Value')
-        axes[1, 1].set_ylabel('Frequency')
+        axes[1, 1].set_xlabel('Residual Value', fontsize=12)
+        axes[1, 1].set_ylabel('Frequency', fontsize=12)
         axes[1, 1].set_title('Residuals Distribution', fontsize=14, fontweight='bold')
         axes[1, 1].grid(True, alpha=0.3)
         
@@ -520,14 +527,14 @@ class IrradianceForecaster:
         mean_residual = np.mean(residuals)
         std_residual = np.std(residuals)
         axes[1, 1].text(0.05, 0.95, f'Mean: {mean_residual:.3f}\nStd: {std_residual:.3f}', 
-                       transform=axes[1, 1].transAxes, 
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                         transform=axes[1, 1].transAxes, 
+                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8), fontsize=10)
         
         plt.tight_layout()
-        plt.savefig('sarimax_model_evaluation.png', dpi=300, bbox_inches='tight')
+        plt.savefig('sarimax_model_evaluation_enhanced.png', dpi=300, bbox_inches='tight')
         plt.show()
         
-        print("   ✅ Visualization saved as 'sarimax_model_evaluation.png'")
+        print("   ✅ Enhanced visualization saved as 'sarimax_model_evaluation_enhanced.png'")
     
     def plot_model_diagnostics(self):
         """

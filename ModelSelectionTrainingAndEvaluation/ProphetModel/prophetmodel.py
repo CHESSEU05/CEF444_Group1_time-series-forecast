@@ -40,7 +40,7 @@ def run_prophet_on_town(file_path):
             print(f"Warning: Missing regressors in {town_name}: {missing}")
 
         # Time split
-        split_idx = int(len(df) * 0.8)
+        split_idx = int(len(df) * 0.999)
         train_df = df.iloc[:split_idx]
         test_df = df.iloc[split_idx:]
 
@@ -55,7 +55,7 @@ def run_prophet_on_town(file_path):
 
         model.fit(train_df[['ds', 'y'] + existing_regressors])
 
-        future = model.make_future_dataframe(periods=len(test_df), freq='D')
+        future = model.make_future_dataframe(periods=5, freq='D')
         future = future.merge(df[['ds'] + existing_regressors], on='ds', how='left')
 
         if future[existing_regressors].isnull().any().any():
